@@ -13,6 +13,7 @@ my $USE_FORMATTED_VALUES;
 my $OUTPUT_ENCODING = 'UTF-8';
 my $TRIM;
 my $MAX_BLANK = 10;
+my $SHEET;
 
 GetOptions(
     "file=s" => \$FILE,
@@ -21,6 +22,7 @@ GetOptions(
     "output_encoding=s" => \$OUTPUT_ENCODING,
     "trim" => \$TRIM,
     "max_blank=i" => \$MAX_BLANK,
+    "sheet=i" => \$SHEET,
 );
 die '--file is required' unless $FILE;
 
@@ -28,7 +30,7 @@ my $UTF16LE_CONVERTER = Text::Iconv->new( 'UTF-16LE', $OUTPUT_ENCODING );
 my $UTF16BE_CONVERTER = Text::Iconv->new( 'UTF-16BE', $OUTPUT_ENCODING );
 my $CP1252 = Text::Iconv->new( 'CP1252', $OUTPUT_ENCODING );
 
-parse_file( file => $FILE, output => $OUTPUT );
+parse_file( file => $FILE, output => $OUTPUT, sheet => $SHEET );
 
 sub parse_file
 {
