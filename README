@@ -1,0 +1,26 @@
+xls2csv
+=======
+
+This will install the xls2csv script.
+
+You will be able to run the script from the command line as:
+xls2csv -x EXCEL_FILE -b CHARSET -c CSV_FILE -a CHARSET
+
+See "perldoc xls2csv" for detailed help.
+
+INSTALLATION
+
+To install this module type the following:
+
+   perl Makefile.PL
+   make
+   make test
+   make install
+
+COPYRIGHT AND LICENCE
+
+Copyright (C) 2005-2012 Ken Prows. (perl@xev.net)
+All rights reserved.
+
+This script is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
+

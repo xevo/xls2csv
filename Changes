@@ -1,0 +1,28 @@
+Revision history for Perl script xls2csv.
+
+1.07 Jan 21, 2012
+    - BUG#64000 - 0 is no longer treated as "empty"
+    - BUG#33248 - Added the -f option, which will force rows to be parsed even if the first column is blank.
+    - Added the -n option, which lets you specify the worksheet you want to convert by its number.
+
+1.06 Fri Sep 30
+	- Now works with multiple worksheets. The worksheet name may be specified with -w.
+	Can also now get a list of all the worksheets in a spreadsheet with the -W switch.
+	Thanks to David Sheldon for submitting the patch that added this functionality.
+
+1.04 Sun Sep 25
+	- After reviewing CPAN Testers reports, I realized that Makefile.PL should be specifying Unicode::Map as a prereq.
+        Now it does. Hopefully the test script won't die anymore.
+
+1.03 Sat Sep 24
+	- Makefile.PL was requiring perl 5.8.6. This has been lowered to 5.6.0
+        - "-v" will now show the version
+        - Reading of the spreadsheet will now continue if a blank line is encountered.
+        
+1.02 Fri Sep 23
+        - Now distributed in a much nicer tar.gz package.
+
+1.00 - 1.01  Fri Sep 23
+	- original version(s)
+		These were uploaded to CPAN as single pl files 
+		instead of an installable package..oops.
