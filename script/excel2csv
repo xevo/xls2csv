@@ -1,0 +1,243 @@
+#!/usr/bin/env perl
+use strict;
+
+use Getopt::Long;
+use Text::Iconv;
+use Spreadsheet::ParseExcel;
+use Spreadsheet::XLSX;
+use Text::CSV_XS;
+
+my $FILE = "";
+my $OUTPUT = 'STDOUT';
+my $USE_FORMATTED_VALUES;
+my $OUTPUT_ENCODING = 'UTF-8';
+my $TRIM;
+my $MAX_BLANK = 10;
+
+GetOptions(
+    "file=s" => \$FILE,
+    "output=s" => \$OUTPUT,
+    "formatted" => \$USE_FORMATTED_VALUES,
+    "output_encoding=s" => \$OUTPUT_ENCODING,
+    "trim" => \$TRIM,
+    "max_blank=i" => \$MAX_BLANK,
+);
+die '--file is required' unless $FILE;
+
+my $UTF16LE_CONVERTER = Text::Iconv->new( 'UTF-16LE', $OUTPUT_ENCODING );
+my $UTF16BE_CONVERTER = Text::Iconv->new( 'UTF-16BE', $OUTPUT_ENCODING );
+my $CP1252 = Text::Iconv->new( 'CP1252', $OUTPUT_ENCODING );
+
+parse_file( file => $FILE, output => $OUTPUT );
+
+sub parse_file
+{
+    my ( %args ) = @_;
+
+    # detect file type
+    my $file = $args{file};
+    my $output = $args{output};
+    
+    my $data;
+
+    if ( $file =~ /\.xlsx$/i )
+    {
+        $data = parse_xlsx(%args);
+    }
+    elsif ( $file =~ /\.xls$/i )
+    {
+        $data = parse_excel(%args);
+    }
+    else
+    {
+        die "Unsupported file type: $file";
+    }
+    
+    unless ($data && @$data)
+    {
+        die "no data could be read";
+    }
+    
+    my $fh;
+    if (uc($output) eq 'STDOUT')
+    {
+        $fh = *STDOUT;
+    }
+    elsif (uc($output) eq 'STDERR')
+    {
+        $fh = *STDERR;
+    }
+    else
+    {
+        open($fh, ">", $output) or die "Can't create $output for writing: $!";
+        binmode $fh;
+    }
+    
+    my $csv = Text::CSV_XS->new({
+        eol => "\n",
+        sep_char => ',',
+        quote_char => '"',
+        escape_char => '"',
+        binary => 1,
+        always_quote => 1,
+    });
+    $csv->print($fh, $_) for @$data;
+    
+    close $fh;
+    
+    return;
+}
+
+sub parse_xlsx
+{
+    my ( %args ) = @_;
+    
+    my $converter;
+    if ( $OUTPUT_ENCODING ne 'UTF-8' )
+    {
+        $converter = Text::Iconv->new( 'UTF-8', $OUTPUT_ENCODING );
+    }
+
+    my $document = Spreadsheet::XLSX->new( $FILE, $converter );
+
+    my @data;
+
+    my $sheet_num = $args{sheet} || 0;
+    my $sheet = @{ $document->{Worksheet} }[ $sheet_num ];
+
+    $sheet->{MaxRow} ||= $sheet->{MinRow};
+    foreach my $row ( $sheet->{MinRow} .. $sheet->{MaxRow} )
+    {
+        $sheet->{MaxCol} ||= $sheet->{MinCol};
+        my @rowdata;
+
+        foreach my $col ( $sheet->{MinCol} .. $sheet->{MaxCol} )
+        {
+            my $cell = $sheet->{Cells}[$row][$col];
+            
+            my $value = $cell->{Val};
+            
+            if ($TRIM)
+            {
+                $value =~ s/\A\s*//;
+                $value =~ s/\s*\Z//;
+            }
+            
+            push(@rowdata, $value);
+        }
+
+        push( @data, \@rowdata );
+    }
+
+    return \@data;
+}
+
+sub parse_excel
+{
+    my ( %args ) = @_;
+    
+    my $sheet = $args{sheet} || 0;
+
+    my $excel = new Spreadsheet::ParseExcel;
+    my $book  = $excel->Parse( $args{file} );
+    my $sheet = $book->{Worksheet}[$sheet];
+    my @data;
+    
+    my $blank_rows = 0;
+
+    EROWS: for ( my $row = 0 ; $row < ( $sheet->{MaxRow} + 1 ) ; $row++ )
+    {
+        my @rowdata;
+        my $has_data = 0;
+        
+        for ( my $cell_count = 0 ; $cell_count < ( $sheet->{MaxCol} + 1 ) ; $cell_count++ )
+        {
+            my $cell = $sheet->{Cells}[$row][$cell_count];
+            my $value = _xls_get_cell_value($cell);
+            $has_data = 1 if (( defined $value ) && ( $value ne "" ));
+            push(@rowdata, $value);
+        }
+        
+        if ($has_data)
+        {
+            $blank_rows = 0;
+        }
+        else
+        {
+            $blank_rows++;
+            if (( $MAX_BLANK ) && ( $blank_rows > $MAX_BLANK ))
+            {
+                last EROWS;
+            }
+        }
+        
+        push( @data, \@rowdata ) if $has_data;
+    }
+    
+    return \@data;
+}
+
+sub _xls_get_cell_value
+{
+    my ( $cell ) = @_;
+    
+    return unless $cell;
+    
+    my $value;
+    
+    if ($USE_FORMATTED_VALUES)
+    {
+        $value = $cell->value();
+        if ($value eq 'GENERAL')
+        {
+            # formatted value is busted, fall back to unformatted value
+            $value = $cell->{Val};
+        }
+    }
+    else
+    {
+        $value = $cell->{Val};
+    }
+
+    # From the docs:
+    #
+    # 0: Unknown format. This shouldn't happen. In the default case the format should be 1.
+    # 1: 8bit ASCII or single byte UTF-16. This indicates that the characters are encoded in a single byte. In Excel 95 and earlier This usually meant ASCII or an international variant. In Excel 97 it refers to a compressed UTF-16 character string where all of the high order bytes are 0 and are omitted to save space.
+    # 2: UTF-16BE.
+    # 3: Native encoding. In Excel 95 and earlier this encoding was used to represent multi-byte character encodings such as SJIS.
+    #
+    # That said...I do not think that #1 is correct. I'm definately seeing Windows-1252 data in cells that return an encoding of "1"
+    #
+    my $cell_encoding = $cell->encoding();
+
+    if ($cell_encoding == 0)
+    {
+        #warn "unknown encoding: $value";
+    }
+    elsif ($cell_encoding == 1)
+    {
+        if ($value =~ /\0/) # TODO this might be wrong if the utf16 is really "compressed"
+        {
+            $value = $UTF16LE_CONVERTER->convert($value);
+            #warn "\tUTF-16LE!: $value";
+        }
+        else
+        {
+            $value = $CP1252->convert($value);
+            #warn "\tWindows-1252!: $value";
+        }
+    }
+    elsif ($cell_encoding == 2)
+    {
+        $value = $UTF16BE_CONVERTER->convert($value);
+        #warn "\tUTF-16BE!: $value";
+    }
+    
+    if ($TRIM)
+    {
+        $value =~ s/\A\s*//;
+        $value =~ s/\s*\Z//;
+    }
+    
+    return $value;
+}
