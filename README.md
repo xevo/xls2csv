@@ -43,6 +43,6 @@ Use the --sheet option to read from a sheet/tab other than the first one. The fo
 
     excel2csv --file file.xlsx --sheet 2
 
-You do not have to pass the --file and --output option keys. The first non-keyed option will be used as the filename, and the second non-keyed option will be the output. Other keyed option can still be passed in:
+You do not have to pass the --file and --output option keys. The first non-keyed option will be used as the filename, and the second non-keyed option will be the output. Other keyed options can still be passed in:
 
     excel2csv file.xlsx file.csv --trim
