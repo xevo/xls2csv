@@ -4,7 +4,7 @@ use ExtUtils::MakeMaker;
 # the contents of the Makefile that is written.
 WriteMakefile(
     NAME              => 'xls2csv',
-    EXE_FILES         => [ 'script/xls2csv' ],
+    EXE_FILES         => [ 'script/xls2csv', 'script/excel2csv' ],
     VERSION_FROM      => 'script/xls2csv', # finds $VERSION
     PREREQ_PM         => { 
 				'Locale::Recode' => 0,

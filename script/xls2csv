@@ -58,11 +58,11 @@ If the csv's charset (-a) is not set, the CSV file will be created using the sam
 
 This script requires the following modules:
 
-	Locale::Recode
-	Unicode::Map
-	Spreadsheet::ParseExcel
-	Spreadsheet::ParseExcel::FmtUnicode (should be included with Spreadsheet::ParseExcel)
-	Text::CSV_XS
+    Locale::Recode
+    Unicode::Map
+    Spreadsheet::ParseExcel
+    Spreadsheet::ParseExcel::FmtUnicode (should be included with Spreadsheet::ParseExcel)
+    Text::CSV_XS
 
 =head1 CAVEATS
 
