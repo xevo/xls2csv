@@ -47,6 +47,11 @@ sub parse_file
     my $file = $args{file};
     my $output = $args{output};
     
+    if ($args{sheet})
+    {
+        $args{sheet} = $args{sheet} - 1;
+    }
+    
     my $data;
 
     if ( $file =~ /\.xlsx$/i )
