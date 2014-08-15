@@ -95,7 +95,7 @@ my $USE_FORMATTED_VALUES;
 my $OUTPUT_ENCODING = 'UTF-8';
 my $TRIM;
 my $MAX_BLANK = 10;
-my $SHEET;
+my $SHEET = 0;
 my $MATCH;
 
 GetOptions(
@@ -114,62 +114,57 @@ if (( !$FILE ) && ( @ARGV ))
     $FILE = $ARGV[0];
     $OUTPUT = $ARGV[1] if $ARGV[1];
 }
+die '--file is required' unless $FILE;
+
+if ($SHEET)
+{
+    $SHEET = $SHEET - 1;
+}
 
 if ($MATCH)
 {
     $MATCH = qr/$MATCH/;
 }
 
-die '--file is required' unless $FILE;
-
 my $UTF16LE_CONVERTER = Text::Iconv->new( 'UTF-16LE', $OUTPUT_ENCODING );
 my $UTF16BE_CONVERTER = Text::Iconv->new( 'UTF-16BE', $OUTPUT_ENCODING );
 my $CP1252 = Text::Iconv->new( 'CP1252', $OUTPUT_ENCODING );
 
-parse_file( file => $FILE, output => $OUTPUT, sheet => $SHEET );
+parse_file();
 
 sub parse_file
 {
     my ( %args ) = @_;
-
-    # detect file type
-    my $file = $args{file};
-    my $output = $args{output};
-    
-    if ($args{sheet})
-    {
-        $args{sheet} = $args{sheet} - 1;
-    }
     
     my $data;
 
-    if ( $file =~ /\.xlsx$/i )
+    if ( $FILE =~ /\.xlsx$/i )
     {
-        $data = parse_xlsx(%args);
+        $data = parse_xlsx();
     }
-    elsif ( $file =~ /\.xls$/i )
+    elsif ( $FILE =~ /\.xls$/i )
     {
-        $data = parse_excel(%args);
+        $data = parse_excel();
     }
     else
     {
-        die "Unsupported file type: $file";
+        die "Unsupported file type: $FILE";
     }
     
     if ($data && @$data)
     {
         my $fh;
-        if (uc($output) eq 'STDOUT')
+        if (uc($OUTPUT) eq 'STDOUT')
         {
             $fh = *STDOUT;
         }
-        elsif (uc($output) eq 'STDERR')
+        elsif (uc($OUTPUT) eq 'STDERR')
         {
             $fh = *STDERR;
         }
         else
         {
-            open($fh, ">", $output) or die "Can't create $output for writing: $!";
+            open($fh, ">", $OUTPUT) or die "Can't create $OUTPUT for writing: $!";
             binmode $fh;
         }
     
@@ -203,8 +198,7 @@ sub parse_xlsx
 
     my @data;
 
-    my $sheet_num = $args{sheet} || 0;
-    my $sheet = @{ $document->{Worksheet} }[ $sheet_num ];
+    my $sheet = @{ $document->{Worksheet} }[$SHEET];
 
     $sheet->{MaxRow} ||= $sheet->{MinRow};
     XROWS: foreach my $row ( $sheet->{MinRow} .. $sheet->{MaxRow} )
@@ -245,12 +239,10 @@ sub parse_xlsx
 sub parse_excel
 {
     my ( %args ) = @_;
-    
-    my $sheet = $args{sheet} || 0;
 
     my $excel = new Spreadsheet::ParseExcel;
-    my $book  = $excel->Parse( $args{file} );
-    my $sheet = $book->{Worksheet}[$sheet];
+    my $book  = $excel->Parse( $FILE );
+    my $sheet = $book->{Worksheet}[$SHEET];
     my @data;
     
     my $blank_rows = 0;
