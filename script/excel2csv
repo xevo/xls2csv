@@ -156,37 +156,35 @@ sub parse_file
         die "Unsupported file type: $file";
     }
     
-    unless ($data && @$data)
+    if ($data && @$data)
     {
-        die "no data could be read";
-    }
+        my $fh;
+        if (uc($output) eq 'STDOUT')
+        {
+            $fh = *STDOUT;
+        }
+        elsif (uc($output) eq 'STDERR')
+        {
+            $fh = *STDERR;
+        }
+        else
+        {
+            open($fh, ">", $output) or die "Can't create $output for writing: $!";
+            binmode $fh;
+        }
     
-    my $fh;
-    if (uc($output) eq 'STDOUT')
-    {
-        $fh = *STDOUT;
-    }
-    elsif (uc($output) eq 'STDERR')
-    {
-        $fh = *STDERR;
-    }
-    else
-    {
-        open($fh, ">", $output) or die "Can't create $output for writing: $!";
-        binmode $fh;
-    }
+        my $csv = Text::CSV_XS->new({
+            eol => "\n",
+            sep_char => ',',
+            quote_char => '"',
+            escape_char => '"',
+            binary => 1,
+            always_quote => 1,
+        });
+        $csv->print($fh, $_) for @$data;
     
-    my $csv = Text::CSV_XS->new({
-        eol => "\n",
-        sep_char => ',',
-        quote_char => '"',
-        escape_char => '"',
-        binary => 1,
-        always_quote => 1,
-    });
-    $csv->print($fh, $_) for @$data;
-    
-    close $fh;
+        close $fh;
+    }
     
     return;
 }
@@ -209,7 +207,7 @@ sub parse_xlsx
     my $sheet = @{ $document->{Worksheet} }[ $sheet_num ];
 
     $sheet->{MaxRow} ||= $sheet->{MinRow};
-    foreach my $row ( $sheet->{MinRow} .. $sheet->{MaxRow} )
+    XROWS: foreach my $row ( $sheet->{MinRow} .. $sheet->{MaxRow} )
     {
         $sheet->{MaxCol} ||= $sheet->{MinCol};
         my @rowdata;
@@ -235,8 +233,10 @@ sub parse_xlsx
             
             push(@rowdata, $value);
         }
+        
+        next XROWS if ( $MATCH && !$matched );
 
-        push( @data, \@rowdata ) unless ( $MATCH && !$matched );
+        push( @data, \@rowdata );
     }
 
     return \@data;
@@ -260,11 +260,19 @@ sub parse_excel
         my @rowdata;
         my $has_data = 0;
         
+        my $matched = 0;
+        
         for ( my $cell_count = 0 ; $cell_count < ( $sheet->{MaxCol} + 1 ) ; $cell_count++ )
         {
             my $cell = $sheet->{Cells}[$row][$cell_count];
             my $value = _xls_get_cell_value($cell);
             $has_data = 1 if (( defined $value ) && ( $value ne "" ));
+            
+            if (( $MATCH ) && ( $value =~ $MATCH ))
+            {
+                $matched = 1;
+            }
+            
             push(@rowdata, $value);
         }
         
@@ -280,6 +288,8 @@ sub parse_excel
                 last EROWS;
             }
         }
+        
+        next EROWS if ( $MATCH && !$matched );
         
         push( @data, \@rowdata ) if $has_data;
     }
