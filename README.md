@@ -14,6 +14,7 @@ The improvements of excel2csv are:
 
 * supports xlsx files
 * handles character encodings much better
+* the options make more sense
 
 excel2csv usage
 ---------------
