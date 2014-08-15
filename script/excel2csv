@@ -56,6 +56,12 @@ If this is set, the "formatted" cell values will be returned instead.
 
 This option has no effect on xlsx files.
 
+This is really only useful to get formatted numbers,
+such as currency values that include a currency symbol,
+or large numbers that contain commas.
+This option may corrupt some unicode characters,
+so make sure you validate that the output looks correct.
+
 =item --trim
 
 If set, whitespace around each value will be trimmed.
