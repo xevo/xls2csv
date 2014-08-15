@@ -1,6 +1,88 @@
 #!/usr/bin/env perl
 use strict;
 
+=HEAD1 NAME
+
+excel2csv
+
+=HEAD1 SYNOPSIS
+
+By default, the CSV output goes to STDOUT:
+
+ excel2csv --file file.xlsx > file.csv
+
+You can also save to a file directly:
+
+ excel2csv --file file.xlsx --output file.csv
+
+Or even write to STDERR:
+
+ excel2csv --file file.xlsx --output STDERR
+
+By default, the CSV file will be in the UTF-8 encoding. You can change the encoding:
+
+ excel2csv --file file.xlsx --output_encoding CP1252 --output file_cp1252.csv
+
+It can also autmatically trim whitespace from around all cell values:
+
+ excel2csv --file file.xlsx --trim
+
+Use the --sheet option to read from a sheet/tab other than the first one. The following will pull from sheet 2:
+
+ excel2csv --file file.xlsx --sheet 2
+
+You do not have to pass the --file and --output option keys. The first non-keyed option will be used as the filename, and the second non-keyed option will be the output. Other keyed options can still be passed in:
+
+ excel2csv file.xlsx file.csv --trim
+ 
+=HEAD1 ARGS
+
+=over
+
+=item --file=(string)
+
+The path to the spreadsheet file.
+
+=item --output=(string)
+
+The path to where you want to store the CSV file.
+
+If you do not pass this, the CSV output will go to STDOUT.
+
+=item --formatted
+
+Be default, the raw cell values from xls files will be returned.
+If this is set, the "formatted" cell values will be returned instead.
+
+This option has no affect on xlsx files.
+
+=item --trim
+
+If set, whitespace around each value will be trimmed.
+
+=item --output_encoding=(string)
+
+The character encoding that you want the CSV output to be in.
+Defaults to UTF-8.
+
+=item --max_blank=(integer)
+
+If this many blank lines are found, parsing will stop.
+Defaults to 10.
+
+=item --sheet=(integer)
+
+The sheet (tab) in the spreadsheet to parse.
+Defaults to sheet 1.
+
+=item --match=(regex)
+
+If set, only rows that have a value matching this regex will be returned.
+
+=back
+
+=cut
+
 use Getopt::Long qw(:config permute);
 use Text::Iconv;
 use Spreadsheet::ParseExcel;
@@ -14,6 +96,7 @@ my $OUTPUT_ENCODING = 'UTF-8';
 my $TRIM;
 my $MAX_BLANK = 10;
 my $SHEET;
+my $MATCH;
 
 GetOptions(
     "file=s" => \$FILE,
@@ -23,12 +106,18 @@ GetOptions(
     "trim" => \$TRIM,
     "max_blank=i" => \$MAX_BLANK,
     "sheet=i" => \$SHEET,
+    "match=s" => \$MATCH,
 );
 
 if (( !$FILE ) && ( @ARGV ))
 {
     $FILE = $ARGV[0];
     $OUTPUT = $ARGV[1] if $ARGV[1];
+}
+
+if ($MATCH)
+{
+    $MATCH = qr/$MATCH/;
 }
 
 die '--file is required' unless $FILE;
@@ -124,6 +213,8 @@ sub parse_xlsx
     {
         $sheet->{MaxCol} ||= $sheet->{MinCol};
         my @rowdata;
+        
+        my $matched = 0;
 
         foreach my $col ( $sheet->{MinCol} .. $sheet->{MaxCol} )
         {
@@ -137,10 +228,15 @@ sub parse_xlsx
                 $value =~ s/\s*\Z//;
             }
             
+            if (( $MATCH ) && ( $value =~ $MATCH ))
+            {
+                $matched = 1;
+            }
+            
             push(@rowdata, $value);
         }
 
-        push( @data, \@rowdata );
+        push( @data, \@rowdata ) unless ( $MATCH && !$matched );
     }
 
     return \@data;
