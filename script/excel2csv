@@ -54,7 +54,7 @@ If you do not pass this, the CSV output will go to STDOUT.
 Be default, the raw cell values from xls files will be returned.
 If this is set, the "formatted" cell values will be returned instead.
 
-This option has no affect on xlsx files.
+This option has no effect on xlsx files.
 
 =item --trim
 
