@@ -242,6 +242,11 @@ sub parse_excel
 
     my $excel = new Spreadsheet::ParseExcel;
     my $book  = $excel->Parse( $FILE );
+    if ( !defined $book )
+    {
+        die $excel->error(), ".\n";
+    }
+    
     my $sheet = $book->{Worksheet}[$SHEET];
     my @data;
     
