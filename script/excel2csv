@@ -75,6 +75,9 @@ Defaults to 10.
 The sheet (tab) in the spreadsheet to parse.
 Defaults to sheet 1.
 
+You can pass this option multiple times to parse multiple sheets.
+Each sheet's data will be added sequentially to the same CSV output.
+
 =item --match=(regex)
 
 If set, only rows that have a value matching this regex will be returned.
@@ -95,7 +98,7 @@ my $USE_FORMATTED_VALUES;
 my $OUTPUT_ENCODING = 'UTF-8';
 my $TRIM;
 my $MAX_BLANK = 10;
-my $SHEET = 0;
+my @SHEETS;
 my $MATCH;
 
 GetOptions(
@@ -105,7 +108,7 @@ GetOptions(
     "output_encoding=s" => \$OUTPUT_ENCODING,
     "trim" => \$TRIM,
     "max_blank=i" => \$MAX_BLANK,
-    "sheet=i" => \$SHEET,
+    "sheet=i" => \@SHEETS,
     "match=s" => \$MATCH,
 );
 
@@ -116,10 +119,7 @@ if (( !$FILE ) && ( @ARGV ))
 }
 die '--file is required' unless $FILE;
 
-if ($SHEET)
-{
-    $SHEET = $SHEET - 1;
-}
+@SHEETS = (1) unless @SHEETS;
 
 if ($MATCH)
 {
@@ -197,42 +197,63 @@ sub parse_xlsx
     my $document = Spreadsheet::XLSX->new( $FILE, $converter );
 
     my @data;
-
-    my $sheet = @{ $document->{Worksheet} }[$SHEET];
-
-    $sheet->{MaxRow} ||= $sheet->{MinRow};
-    XROWS: foreach my $row ( $sheet->{MinRow} .. $sheet->{MaxRow} )
+    
+    foreach my $sheet_number (@SHEETS)
     {
-        $sheet->{MaxCol} ||= $sheet->{MinCol};
-        my @rowdata;
+        $sheet_number ||= 1;
+        $sheet_number--;
         
-        my $matched = 0;
+        my $sheet = @{ $document->{Worksheet} }[$sheet_number];
 
-        foreach my $col ( $sheet->{MinCol} .. $sheet->{MaxCol} )
+        my $blank_rows = 0;
+
+        $sheet->{MaxRow} ||= $sheet->{MinRow};
+        XROWS: foreach my $row ( $sheet->{MinRow} .. $sheet->{MaxRow} )
         {
-            my $cell = $sheet->{Cells}[$row][$col];
+            $sheet->{MaxCol} ||= $sheet->{MinCol};
             
-            my $value = $cell->{Val};
-            
-            if ($TRIM)
+            my @rowdata;
+            my $has_data = 0;
+            my $matched = 0;
+
+            foreach my $col ( $sheet->{MinCol} .. $sheet->{MaxCol} )
             {
-                $value =~ s/\A\s*//;
-                $value =~ s/\s*\Z//;
+                my $cell = $sheet->{Cells}[$row][$col];
+
+                my $value = $cell->{Val};
+
+                if ($TRIM)
+                {
+                    $value =~ s/\A\s*//;
+                    $value =~ s/\s*\Z//;
+                }
+                
+                $has_data = 1 if (( defined $value ) && ( $value ne "" ));
+                $matched = 1 if (( $MATCH ) && ( $value =~ $MATCH ));
+
+                push(@rowdata, $value);
             }
             
-            if (( $MATCH ) && ( $value =~ $MATCH ))
+            if ($has_data)
             {
-                $matched = 1;
+                $blank_rows = 0;
             }
+            else
+            {
+                $blank_rows++;
+                if (( $MAX_BLANK ) && ( $blank_rows > $MAX_BLANK ))
+                {
+                    last XROWS;
+                }
+            }
+
+            next XROWS if ( !$has_data );
+            next XROWS if ( $MATCH && !$matched );
             
-            push(@rowdata, $value);
+            push( @data, \@rowdata );
         }
-        
-        next XROWS if ( $MATCH && !$matched );
-
-        push( @data, \@rowdata );
     }
-
+    
     return \@data;
 }
 
@@ -247,48 +268,50 @@ sub parse_excel
         die $excel->error(), ".\n";
     }
     
-    my $sheet = $book->{Worksheet}[$SHEET];
     my @data;
     
-    my $blank_rows = 0;
-
-    EROWS: for ( my $row = 0 ; $row < ( $sheet->{MaxRow} + 1 ) ; $row++ )
+    foreach my $sheet_number (@SHEETS)
     {
-        my @rowdata;
-        my $has_data = 0;
+        $sheet_number ||= 1;
+        $sheet_number--;
         
-        my $matched = 0;
+        my $sheet = $book->{Worksheet}[$sheet_number];
         
-        for ( my $cell_count = 0 ; $cell_count < ( $sheet->{MaxCol} + 1 ) ; $cell_count++ )
+        my $blank_rows = 0;
+
+        EROWS: for ( my $row = 0 ; $row < ( $sheet->{MaxRow} + 1 ) ; $row++ )
         {
-            my $cell = $sheet->{Cells}[$row][$cell_count];
-            my $value = _xls_get_cell_value($cell);
-            $has_data = 1 if (( defined $value ) && ( $value ne "" ));
-            
-            if (( $MATCH ) && ( $value =~ $MATCH ))
+            my @rowdata;
+            my $has_data = 0;
+            my $matched = 0;
+
+            for ( my $cell_count = 0 ; $cell_count < ( $sheet->{MaxCol} + 1 ) ; $cell_count++ )
             {
-                $matched = 1;
+                my $cell = $sheet->{Cells}[$row][$cell_count];
+                my $value = _xls_get_cell_value($cell);
+                $has_data = 1 if (( defined $value ) && ( $value ne "" ));
+                $matched = 1 if (( $MATCH ) && ( $value =~ $MATCH ));
+                push(@rowdata, $value);
             }
-            
-            push(@rowdata, $value);
-        }
-        
-        if ($has_data)
-        {
-            $blank_rows = 0;
-        }
-        else
-        {
-            $blank_rows++;
-            if (( $MAX_BLANK ) && ( $blank_rows > $MAX_BLANK ))
+
+            if ($has_data)
             {
-                last EROWS;
+                $blank_rows = 0;
             }
+            else
+            {
+                $blank_rows++;
+                if (( $MAX_BLANK ) && ( $blank_rows > $MAX_BLANK ))
+                {
+                    last EROWS;
+                }
+            }
+
+            next EROWS if ( !$has_data );
+            next EROWS if ( $MATCH && !$matched );
+
+            push( @data, \@rowdata );
         }
-        
-        next EROWS if ( $MATCH && !$matched );
-        
-        push( @data, \@rowdata ) if $has_data;
     }
     
     return \@data;
