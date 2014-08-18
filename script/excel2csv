@@ -230,8 +230,8 @@ sub parse_xlsx
                     {
                         $value = $cell->value();
 
-                        # if we got back "GENERAL", the formatted value cannot be retrieved
-                        if ($value eq 'GENERAL')
+                        # if we got back "General", the formatted value cannot be retrieved
+                        if ($value eq 'General')
                         {
                             $value = $cell->{Val};
                         }
