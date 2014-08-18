@@ -327,20 +327,29 @@ sub _xls_get_cell_value
     
     return unless $cell;
     
-    my $value = $cell->{Val};
+    my $value;
     
     if ($USE_FORMATTED_VALUES)
     {
         # only grab formatted values for numbers and dates
         if ($cell->type() =~ /^(?:Numeric|Date)$/)
         {
-            my $formatted_value = $cell->value();
+            $value = $cell->value();
+            
             # if we got back "GENERAL", the formatted value cannot be retrieved
-            if ($formatted_value ne 'GENERAL')
+            if ($value eq 'GENERAL')
             {
-                $value = $formatted_value;
+                $value = $cell->{Val};
             }
         }
+        else
+        {
+            $value = $cell->{Val};
+        }
+    }
+    else
+    {
+        $value = $cell->{Val};
     }
 
     # From the docs:
