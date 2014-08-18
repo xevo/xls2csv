@@ -54,8 +54,6 @@ If you do not pass this, the CSV output will go to STDOUT.
 Be default, the raw cell values from xls files will be returned.
 If this is set, the "formatted" cell values will be returned instead.
 
-This option has no effect on xlsx files.
-
 This is really only useful to get formatted numbers,
 such as currency values that include a currency symbol,
 or large numbers that contain commas.
@@ -223,8 +221,30 @@ sub parse_xlsx
             foreach my $col ( $sheet->{MinCol} .. $sheet->{MaxCol} )
             {
                 my $cell = $sheet->{Cells}[$row][$col];
+                
+                my $value;
+                if (( $USE_FORMATTED_VALUES ) && ( defined($cell) ))
+                {
+                    # only grab formatted values for numbers and dates
+                    if ($cell->type() =~ /^(?:Numeric|Date)$/)
+                    {
+                        $value = $cell->value();
 
-                my $value = $cell->{Val};
+                        # if we got back "GENERAL", the formatted value cannot be retrieved
+                        if ($value eq 'GENERAL')
+                        {
+                            $value = $cell->{Val};
+                        }
+                    }
+                    else
+                    {
+                        $value = $cell->{Val};
+                    }
+                }
+                else
+                {
+                    $value = $cell->{Val};
+                }
 
                 if ($TRIM)
                 {
