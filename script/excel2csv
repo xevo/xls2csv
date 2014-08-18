@@ -59,8 +59,6 @@ This option has no effect on xlsx files.
 This is really only useful to get formatted numbers,
 such as currency values that include a currency symbol,
 or large numbers that contain commas.
-This option may corrupt some unicode characters,
-so make sure you validate that the output looks correct.
 
 =item --trim
 
@@ -329,20 +327,20 @@ sub _xls_get_cell_value
     
     return unless $cell;
     
-    my $value;
+    my $value = $cell->{Val};
     
     if ($USE_FORMATTED_VALUES)
     {
-        $value = $cell->value();
-        if ($value eq 'GENERAL')
+        # only grab formatted values for numbers and dates
+        if ($cell->type() =~ /^(?:Numeric|Date)$/)
         {
-            # formatted value is busted, fall back to unformatted value
-            $value = $cell->{Val};
+            my $formatted_value = $cell->value();
+            # if we got back "GENERAL", the formatted value cannot be retrieved
+            if ($formatted_value ne 'GENERAL')
+            {
+                $value = $formatted_value;
+            }
         }
-    }
-    else
-    {
-        $value = $cell->{Val};
     }
 
     # From the docs:
