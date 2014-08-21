@@ -103,6 +103,7 @@ my $TRIM;
 my $MAX_BLANK = 10;
 my @SHEETS;
 my $MATCH;
+my $VERBOSE;
 
 GetOptions(
     "file=s" => \@FILES,
@@ -113,6 +114,7 @@ GetOptions(
     "max_blank=i" => \$MAX_BLANK,
     "sheet=i" => \@SHEETS,
     "match=s" => \$MATCH,
+    "verbose" => \$VERBOSE,
 );
 
 if (( !scalar(@FILES) ) && ( @ARGV ))
@@ -166,7 +168,7 @@ sub parse_file
     my $unlink_file = 0;
     if ($file =~ /^(.+)\.gz$/)
     {
-        #warn "unzipping $file...\n" unless uc($OUTPUT) eq 'STDERR';
+        warn "unzipping $file...\n" if $VERBOSE && uc($OUTPUT) ne 'STDERR';
         my $ungz_file = ".tmp__$1";
         gunzip($file, $ungz_file);
         $file = $ungz_file;
@@ -241,7 +243,7 @@ sub parse_xlsx
     my ( %args ) = @_;
     
     my $file = $args{file};
-    #warn "parsing $file...\n" unless uc($OUTPUT) eq 'STDERR';
+    warn "parsing $file...\n" warn "unzipping $file...\n" if $VERBOSE && uc($OUTPUT) ne 'STDERR';
     
     my $converter;
     if ( $OUTPUT_ENCODING ne 'UTF-8' )
@@ -339,7 +341,7 @@ sub parse_excel
     my ( %args ) = @_;
     
     my $file = $args{file};
-    #warn "parsing $file...\n" unless uc($OUTPUT) eq 'STDERR';
+    warn "parsing $file...\n" if $VERBOSE && uc($OUTPUT) ne 'STDERR';
 
     my $excel = new Spreadsheet::ParseExcel;
     my $book  = $excel->Parse( $file );
