@@ -166,6 +166,7 @@ sub parse_file
     my $unlink_file = 0;
     if ($file =~ /^(.+)\.gz$/)
     {
+        warn "unzipping $file...\n" unless uc($OUTPUT) eq 'STDERR';
         my $ungz_file = ".tmp__$1";
         gunzip($file, $ungz_file);
         $file = $ungz_file;
