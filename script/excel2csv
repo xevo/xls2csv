@@ -175,6 +175,8 @@ sub parse_file
     
     eval
     {
+        warn "parsing $file...\n" unless uc($OUTPUT) eq 'STDERR';
+        
         if ( $file =~ /\.xlsx$/i )
         {
             $data = parse_xlsx( file => $file );
