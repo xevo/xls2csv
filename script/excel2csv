@@ -93,8 +93,9 @@ use Text::Iconv;
 use Spreadsheet::ParseExcel;
 use Spreadsheet::XLSX;
 use Text::CSV_XS;
+use IO::Uncompress::Gunzip qw(gunzip $GunzipError);
 
-my $FILE = "";
+my @FILES;
 my $OUTPUT = 'STDOUT';
 my $USE_FORMATTED_VALUES;
 my $OUTPUT_ENCODING = 'UTF-8';
@@ -104,7 +105,7 @@ my @SHEETS;
 my $MATCH;
 
 GetOptions(
-    "file=s" => \$FILE,
+    "file=s" => \@FILES,
     "output=s" => \$OUTPUT,
     "formatted" => \$USE_FORMATTED_VALUES,
     "output_encoding=s" => \$OUTPUT_ENCODING,
@@ -114,12 +115,26 @@ GetOptions(
     "match=s" => \$MATCH,
 );
 
-if (( !$FILE ) && ( @ARGV ))
+if (( !scalar(@FILES) ) && ( @ARGV ))
 {
-    $FILE = $ARGV[0];
-    $OUTPUT = $ARGV[1] if $ARGV[1];
+    foreach my $file (@ARGV)
+    {
+        if ($file =~ /\.xls/i)
+        {
+            push(@FILES, $file);
+        }
+        elsif ( $file =~ /\.csv$/i )
+        {
+            $OUTPUT = $file;
+        }
+    }
 }
-die '--file is required' unless $FILE;
+die '--file is required' unless @FILES;
+
+if ($OUTPUT !~ /(?:STDOUT|STDERR|\.xls)/i)
+{
+    die "invalid output: $OUTPUT";
+}
 
 @SHEETS = (1) unless @SHEETS;
 
@@ -132,26 +147,51 @@ my $UTF16LE_CONVERTER = Text::Iconv->new( 'UTF-16LE', $OUTPUT_ENCODING );
 my $UTF16BE_CONVERTER = Text::Iconv->new( 'UTF-16BE', $OUTPUT_ENCODING );
 my $CP1252 = Text::Iconv->new( 'CP1252', $OUTPUT_ENCODING );
 
-parse_file();
+my $append = 0;
+foreach my $file (@FILES)
+{
+    parse_file( append => $append );
+    $append = 1;
+}
 
 sub parse_file
 {
     my ( %args ) = @_;
     
+    my $file = $args{file};
+    my $append = $args{append};
+    
     my $data;
-
-    if ( $FILE =~ /\.xlsx$/i )
+    
+    my $unlink_file = 0;
+    if ($file =~ /^(.+)\.gz$/)
     {
-        $data = parse_xlsx();
+        gunzip($file, ".tmp__$1");
+        $file = ".tmp__$1";
+        $unlink_file = 1;
     }
-    elsif ( $FILE =~ /\.xls$/i )
+    
+    eval
     {
-        $data = parse_excel();
-    }
-    else
+        if ( $file =~ /\.xlsx$/i )
+        {
+            $data = parse_xlsx( file => $file );
+        }
+        elsif ( $file =~ /\.xls$/i )
+        {
+            $data = parse_excel( file => $file );
+        }
+        else
+        {
+            die "Unsupported file type: $file";
+        }
+    };
+    if (my $error = $@)
     {
-        die "Unsupported file type: $FILE";
+        unlink($file) if $unlink_file;
+        die "$error\n" if $error;
     }
+    unlink($file) if $unlink_file;
     
     if ($data && @$data)
     {
@@ -166,7 +206,14 @@ sub parse_file
         }
         else
         {
-            open($fh, ">", $OUTPUT) or die "Can't create $OUTPUT for writing: $!";
+            if ($append && -f $OUTPUT)
+            {
+                open($fh, ">>", $OUTPUT) or die "Can't create $OUTPUT for appending: $!";
+            }
+            else
+            {
+                open($fh, ">", $OUTPUT) or die "Can't create $OUTPUT for writing: $!";
+            }
             binmode $fh;
         }
     
@@ -190,13 +237,16 @@ sub parse_xlsx
 {
     my ( %args ) = @_;
     
+    my $file = $args{file};
+    my $append = $args{append};
+    
     my $converter;
     if ( $OUTPUT_ENCODING ne 'UTF-8' )
     {
         $converter = Text::Iconv->new( 'UTF-8', $OUTPUT_ENCODING );
     }
 
-    my $document = Spreadsheet::XLSX->new( $FILE, $converter );
+    my $document = Spreadsheet::XLSX->new( $file, $converter );
 
     my @data;
     
@@ -284,9 +334,11 @@ sub parse_xlsx
 sub parse_excel
 {
     my ( %args ) = @_;
+    
+    my $file = $args{file};
 
     my $excel = new Spreadsheet::ParseExcel;
-    my $book  = $excel->Parse( $FILE );
+    my $book  = $excel->Parse( $file );
     if ( !defined $book )
     {
         die $excel->error(), ".\n";
