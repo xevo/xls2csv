@@ -175,8 +175,6 @@ sub parse_file
     
     eval
     {
-        warn "parsing $file...\n" unless uc($OUTPUT) eq 'STDERR';
-        
         if ( $file =~ /\.xlsx$/i )
         {
             $data = parse_xlsx( file => $file );
@@ -242,7 +240,7 @@ sub parse_xlsx
     my ( %args ) = @_;
     
     my $file = $args{file};
-    my $append = $args{append};
+    warn "parsing $file...\n" unless uc($OUTPUT) eq 'STDERR';
     
     my $converter;
     if ( $OUTPUT_ENCODING ne 'UTF-8' )
@@ -340,6 +338,7 @@ sub parse_excel
     my ( %args ) = @_;
     
     my $file = $args{file};
+    warn "parsing $file...\n" unless uc($OUTPUT) eq 'STDERR';
 
     my $excel = new Spreadsheet::ParseExcel;
     my $book  = $excel->Parse( $file );
