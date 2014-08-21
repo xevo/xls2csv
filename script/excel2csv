@@ -131,7 +131,7 @@ if (( !scalar(@FILES) ) && ( @ARGV ))
 }
 die '--file is required' unless @FILES;
 
-if ($OUTPUT !~ /(?:STDOUT|STDERR|\.xls)/i)
+if ($OUTPUT !~ /^(?:STDOUT|STDERR|.+\.csv)$/i)
 {
     die "invalid output: $OUTPUT";
 }
