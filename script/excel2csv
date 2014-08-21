@@ -229,7 +229,7 @@ sub parse_file
         });
         $csv->print($fh, $_) for @$data;
     
-        close $fh;
+        #close $fh;
     }
     
     return;
