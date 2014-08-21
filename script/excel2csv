@@ -150,7 +150,7 @@ my $CP1252 = Text::Iconv->new( 'CP1252', $OUTPUT_ENCODING );
 my $append = 0;
 foreach my $file (@FILES)
 {
-    parse_file( append => $append );
+    parse_file( file => $file, append => $append );
     $append = 1;
 }
 
