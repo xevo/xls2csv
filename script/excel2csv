@@ -228,7 +228,8 @@ sub parse_file
             always_quote => 1,
         });
         $csv->print($fh, $_) for @$data;
-    
+        
+        # don't close it...we don't want to close STDOUT/STDERR, and its not needed for files
         #close $fh;
     }
     
