@@ -35,6 +35,16 @@ You do not have to pass the --file and --output option keys. The first non-keyed
 
  excel2csv file.xlsx file.csv --trim
  
+Bash file globbing is also supported.
+This will parse through each xls file in the current directory
+and print out the CSV output from each one to STDOUT.
+
+ excel2csv *.xls
+ 
+gz files can also be parsed:
+
+ excel2csv file.xls.gz
+
 =HEAD1 ARGS
 
 =over
