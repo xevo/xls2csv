@@ -166,8 +166,9 @@ sub parse_file
     my $unlink_file = 0;
     if ($file =~ /^(.+)\.gz$/)
     {
-        gunzip($file, ".tmp__$1");
-        $file = ".tmp__$1";
+        my $ungz_file = ".tmp__$1";
+        gunzip($file, $ungz_file);
+        $file = $ungz_file;
         $unlink_file = 1;
     }
     
