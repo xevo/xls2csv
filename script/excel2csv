@@ -209,14 +209,13 @@ sub parse_file
     
     my $data;
     
-    my $unlink_file = 0;
-    if ($file =~ /^(.+)\.gz$/)
+    my ($gz_fh, $gz_filename);
+    if ($file =~ /^.+(\.xlsx?)\.gz$/)
     {
         verbose("unzipping $file...");
-        my $ungz_file = ".tmp__$1";
-        gunzip($file, $ungz_file);
-        $file = $ungz_file;
-        $unlink_file = 1;
+        ($gz_fh, $gz_filename) = tempfile('excel2csv_XXXXXX', SUFFIX => $1, UNLINK => 1, TMPDIR => 1);
+        gunzip($file, $gz_filename);
+        $file = $gz_filename;
     }
     
     eval
@@ -236,10 +235,8 @@ sub parse_file
     };
     if (my $error = $@)
     {
-        unlink($file) if $unlink_file;
         die "$error\n" if $error;
     }
-    unlink($file) if $unlink_file;
     
     if ($data && @$data)
     {
