@@ -48,7 +48,7 @@ gz files can also be parsed:
 
 You can even pipe in the binary excel data:
 
- cat file.xls | excel2csv
+ cat file.xls | excel2csv > file.csv
 
 =HEAD1 ARGS
 
