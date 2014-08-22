@@ -104,6 +104,7 @@ use Spreadsheet::ParseExcel;
 use Spreadsheet::XLSX;
 use Text::CSV_XS;
 use IO::Uncompress::Gunzip qw(gunzip $GunzipError);
+use File::Temp qw(tempfile);
 
 my @FILES;
 my $OUTPUT = 'STDOUT';
@@ -127,6 +128,8 @@ GetOptions(
     "verbose" => \$VERBOSE,
 );
 
+my ($stdin_fh, $stdin_filename);
+
 if (( !scalar(@FILES) ) && ( @ARGV ))
 {
     foreach my $file (@ARGV)
@@ -141,6 +144,37 @@ if (( !scalar(@FILES) ) && ( @ARGV ))
         }
     }
 }
+else
+{
+    my $i = 0;
+    while (<STDIN>)
+    {
+        if (++$i==1)
+        {
+            if ($_ =~ /^\x50\x4B/)
+            {
+                verbose("xlsx input detected");
+                ($stdin_fh, $stdin_filename) = tempfile('excel2csv_XXXXXX', SUFFIX => '.xlsx', UNLINK => 1, TMPDIR => 1);
+            }
+            elsif ($_ =~ /^\xD0\xCF/)
+            {
+                verbose("xls input detected");
+                ($stdin_fh, $stdin_filename) = tempfile('excel2csv_XXXXXX', SUFFIX => '.xls', UNLINK => 1, TMPDIR => 1);
+            }
+            else
+            {
+                die "unknown input from STDIN";
+            }
+        }
+        print $stdin_fh $_;
+    }
+    if ($stdin_fh && $stdin_filename)
+    {
+        close $stdin_fh;
+        push(@FILES, $stdin_filename);
+    }
+}
+
 die '--file is required' unless @FILES;
 
 if ($OUTPUT !~ /^(?:STDOUT|STDERR|.+\.csv)$/i)
@@ -178,7 +212,7 @@ sub parse_file
     my $unlink_file = 0;
     if ($file =~ /^(.+)\.gz$/)
     {
-        warn "unzipping $file...\n" if $VERBOSE && uc($OUTPUT) ne 'STDERR';
+        verbose("unzipping $file...");
         my $ungz_file = ".tmp__$1";
         gunzip($file, $ungz_file);
         $file = $ungz_file;
@@ -253,13 +287,16 @@ sub parse_xlsx
     my ( %args ) = @_;
     
     my $file = $args{file};
-    warn "parsing $file...\n" if $VERBOSE && uc($OUTPUT) ne 'STDERR';
+    verbose("parsing $file...");
     
     my $converter;
     if ( $OUTPUT_ENCODING ne 'UTF-8' )
     {
         $converter = Text::Iconv->new( 'UTF-8', $OUTPUT_ENCODING );
     }
+
+
+    #$system("ls -la $file");
 
     my $document = Spreadsheet::XLSX->new( $file, $converter );
 
@@ -351,7 +388,7 @@ sub parse_excel
     my ( %args ) = @_;
     
     my $file = $args{file};
-    warn "parsing $file...\n" if $VERBOSE && uc($OUTPUT) ne 'STDERR';
+    verbose("parsing $file...");
 
     my $excel = new Spreadsheet::ParseExcel;
     my $book  = $excel->Parse( $file );
@@ -481,4 +518,14 @@ sub _xls_get_cell_value
     }
     
     return $value;
+}
+
+sub verbose
+{
+    my ($message) = @_;
+    if ($VERBOSE && uc($OUTPUT) ne 'STDERR')
+    {
+        warn "$message\n";
+    }
+    return;
 }
