@@ -45,7 +45,7 @@ gz files can also be parsed:
 
  excel2csv file.xls.gz
 
-Lastly, you can pipe in the binary excel data:
+You can even pipe in the binary excel data:
 
  cat file.xls | excel2csv
 
