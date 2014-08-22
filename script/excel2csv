@@ -210,7 +210,7 @@ sub parse_file
     my $data;
     
     my ($gz_fh, $gz_filename);
-    if ($file =~ /^.+(\.xlsx?)\.gz$/)
+    if ($file =~ /^.+(\.xlsx?)\.gz$/i)
     {
         verbose("unzipping $file...");
         ($gz_fh, $gz_filename) = tempfile('excel2csv_XXXXXX', SUFFIX => $1, UNLINK => 1, TMPDIR => 1);
