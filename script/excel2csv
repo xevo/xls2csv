@@ -292,9 +292,6 @@ sub parse_xlsx
         $converter = Text::Iconv->new( 'UTF-8', $OUTPUT_ENCODING );
     }
 
-
-    #$system("ls -la $file");
-
     my $document = Spreadsheet::XLSX->new( $file, $converter );
 
     my @data;
