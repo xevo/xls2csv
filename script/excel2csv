@@ -44,6 +44,7 @@ and print out the CSV output from each one to STDOUT.
 gz files can also be parsed:
 
  excel2csv file.xls.gz
+ excel2csv *.xls.gz
 
 You can even pipe in the binary excel data:
 
