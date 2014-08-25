@@ -114,6 +114,7 @@ use Spreadsheet::XLSX;
 use Text::CSV_XS;
 use IO::Uncompress::Gunzip qw(gunzip $GunzipError);
 use File::Temp qw(tempfile);
+use Term::ANSIColor;
 
 my @FILES;
 my $OUTPUT = 'STDOUT';
@@ -124,6 +125,7 @@ my $MAX_BLANK = 10;
 my @SHEETS;
 my $MATCH;
 my $VERBOSE;
+my $USE_COLOR;
 
 GetOptions(
     "file=s" => \@FILES,
@@ -135,6 +137,7 @@ GetOptions(
     "sheet=i" => \@SHEETS,
     "match=s" => \$MATCH,
     "verbose" => \$VERBOSE,
+    "color" => \$USE_COLOR,
 );
 
 my ($stdin_fh, $stdin_filename);
@@ -193,6 +196,8 @@ if ($OUTPUT !~ /^(?:STDOUT|STDERR|.+\.csv)$/i)
 
 @SHEETS = (1) unless @SHEETS;
 
+$USE_COLOR = 0 unless uc($OUTPUT) eq 'STDOUT';
+
 if ($MATCH)
 {
     $MATCH = qr/$MATCH/;
@@ -221,7 +226,7 @@ sub parse_file
     my ($gz_fh, $gz_filename);
     if ($file =~ /^.+(\.xlsx?)\.gz$/i)
     {
-        verbose("unzipping $file...");
+        verbose("unzipping $file...", "cyan");
         ($gz_fh, $gz_filename) = tempfile('excel2csv_XXXXXX', SUFFIX => $1, UNLINK => 1, TMPDIR => 1);
         gunzip($file, $gz_filename);
         $file = $gz_filename;
@@ -302,7 +307,7 @@ sub parse_xlsx
     my ( %args ) = @_;
     
     my $file = $args{file};
-    verbose("parsing $file...");
+    verbose("parsing $file...", "green");
     
     my $converter;
     if ( $OUTPUT_ENCODING ne 'UTF-8' )
@@ -400,7 +405,7 @@ sub parse_excel
     my ( %args ) = @_;
     
     my $file = $args{file};
-    verbose("parsing $file...");
+    verbose("parsing $file...", "green");
 
     my $excel = new Spreadsheet::ParseExcel;
     my $book  = $excel->Parse( $file );
@@ -534,10 +539,12 @@ sub _xls_get_cell_value
 
 sub verbose
 {
-    my ($message) = @_;
+    my ($message, $color) = @_;
     if ($VERBOSE && uc($OUTPUT) ne 'STDERR')
     {
+        print color $color if $USE_COLOR && $color;
         warn "$message\n";
+        print color 'reset' if $USE_COLOR && $color;
     }
     return;
 }
