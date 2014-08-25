@@ -165,12 +165,12 @@ else
         {
             if ($_ =~ /^\x50\x4B/)
             {
-                verbose("xlsx input detected");
+                verbose("xlsx input detected", "cyan");
                 ($stdin_fh, $stdin_filename) = tempfile('excel2csv_XXXXXX', SUFFIX => '.xlsx', UNLINK => 1, TMPDIR => 1);
             }
             elsif ($_ =~ /^\xD0\xCF/)
             {
-                verbose("xls input detected");
+                verbose("xls input detected", "cyan");
                 ($stdin_fh, $stdin_filename) = tempfile('excel2csv_XXXXXX', SUFFIX => '.xls', UNLINK => 1, TMPDIR => 1);
             }
             else
@@ -195,8 +195,6 @@ if ($OUTPUT !~ /^(?:STDOUT|STDERR|.+\.csv)$/i)
 }
 
 @SHEETS = (1) unless @SHEETS;
-
-$USE_COLOR = 0 unless uc($OUTPUT) eq 'STDOUT';
 
 if ($MATCH)
 {
@@ -372,7 +370,21 @@ sub parse_xlsx
                 }
                 
                 $has_data = 1 if (( defined $value ) && ( $value ne "" ));
-                $matched = 1 if (( $MATCH ) && ( $value =~ $MATCH ));
+                
+                if ($MATCH)
+                {
+                    if ($USE_COLOR)
+                    {
+                        my $color_on = color("red");
+                        my $color_off = color("reset");
+                        my $matches = $value =~ s{($MATCH)}{$color_on$1$color_off}g;
+                        $matched = 1 if $matches;
+                    }
+                    else
+                    {
+                        $matched = 1 if $value =~ $MATCH;
+                    }
+                }
 
                 push(@rowdata, $value);
             }
@@ -436,7 +448,22 @@ sub parse_excel
                 my $cell = $sheet->{Cells}[$row][$cell_count];
                 my $value = _xls_get_cell_value($cell);
                 $has_data = 1 if (( defined $value ) && ( $value ne "" ));
-                $matched = 1 if (( $MATCH ) && ( $value =~ $MATCH ));
+                
+                if ($MATCH)
+                {
+                    if ($USE_COLOR)
+                    {
+                        my $color_on = color("red");
+                        my $color_off = color("reset");
+                        my $matches = $value =~ s{($MATCH)}{$color_on$1$color_off}g;
+                        $matched = 1 if $matches;
+                    }
+                    else
+                    {
+                        $matched = 1 if $value =~ $MATCH;
+                    }
+                }
+                
                 push(@rowdata, $value);
             }
 
@@ -452,7 +479,7 @@ sub parse_excel
                     last EROWS;
                 }
             }
-
+            
             next EROWS if ( !$has_data );
             next EROWS if ( $MATCH && !$matched );
 
@@ -542,9 +569,9 @@ sub verbose
     my ($message, $color) = @_;
     if ($VERBOSE && uc($OUTPUT) ne 'STDERR')
     {
-        print color $color if $USE_COLOR && $color;
+        print STDERR color $color if $USE_COLOR && $color;
         warn "$message\n";
-        print color 'reset' if $USE_COLOR && $color;
+        print STDERR color 'reset' if $USE_COLOR && $color;
     }
     return;
 }
