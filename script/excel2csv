@@ -103,6 +103,13 @@ Each sheet's data will be added sequentially to the same CSV output.
 
 If set, only rows that have a value matching this regex will be returned.
 
+=item --color
+
+Use color when outputting results.
+This option only makes sense when you are outputting to STDOUT.
+
+When using --match, each match will also be highlighted in red.
+
 =back
 
 =cut
