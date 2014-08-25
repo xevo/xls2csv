@@ -64,6 +64,10 @@ The path to where you want to store the CSV file.
 
 If you do not pass this, the CSV output will go to STDOUT.
 
+If this is a directory, a csv filename will be created automatically
+using the excel filename.
+The extension will simply be changed to .csv.
+
 =item --formatted
 
 Be default, the raw cell values from xls files will be returned.
@@ -256,17 +260,26 @@ sub parse_file
         }
         else
         {
-            if ($append && -f $OUTPUT)
+            my $output_location = $OUTPUT;
+            
+            if (-d $output_location)
             {
-                open($fh, ">>", $OUTPUT) or die "Can't create $OUTPUT for appending: $!";
+                $output_location .= '/' unless $output_location =~ m{/$};
+                $output_location .= $file;
+                $output_location =~ s{\.xlsx?$}{.csv}i;
+            }
+            
+            if ($append && -f _)
+            {
+                open($fh, ">>", $output_location) or die "Can't create $output_location for appending: $!";
             }
             else
             {
-                open($fh, ">", $OUTPUT) or die "Can't create $OUTPUT for writing: $!";
+                open($fh, ">", $output_location) or die "Can't create $output_location for writing: $!";
             }
             binmode $fh;
         }
-    
+        
         my $csv = Text::CSV_XS->new({
             eol => "\n",
             sep_char => ',',
