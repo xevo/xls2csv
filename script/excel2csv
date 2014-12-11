@@ -122,7 +122,6 @@ use Text::CSV_XS;
 use IO::Uncompress::Gunzip qw(gunzip $GunzipError);
 use File::Temp qw(tempfile);
 use Term::ANSIColor;
-use HTML::Entities;
 
 my @FILES;
 my $OUTPUT = 'STDOUT';
@@ -381,7 +380,9 @@ sub parse_xlsx
                 {
                     # decode entities
                     # compensates for this bug: https://rt.cpan.org/Public/Bug/Display.html?id=73753
-                    decode_entities($value);
+                    $value =~ s/&amp;/&/g;
+                    $value =~ s/&gt;/>/g;
+                    $value =~ s/&lt;/</g;
                 }
                 
                 $has_data = 1 if (( defined $value ) && ( $value ne "" ));
