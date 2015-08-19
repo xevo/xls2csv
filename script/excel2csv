@@ -1,252 +1,593 @@
-#!/bin/env perl
+#!/usr/bin/env perl
 use strict;
 
-use Getopt::Long;
-use Term::ANSIColor;
+=HEAD1 NAME
 
-my $file;
-my $match;
-my $nocolor;
-my $column_width = 20;
-my $errors_only;
-my $check_line;
+excel2csv
 
-GetOptions(
-    "file=s"  => \$file,
-    "match=s" => \$match,
-    "nocolor" => \$nocolor,
-    "width=i" => \$column_width,
-    "errors" => \$errors_only,
-    "check_line=i" => \$check_line,
-    );
+=HEAD1 SYNOPSIS
 
-$ENV{ANSI_COLORS_DISABLED} = 1 if $nocolor;
+By default, the CSV output goes to STDOUT:
 
-=head1 Usage
+ excel2csv --file file.xlsx > file.csv
 
-hexinator.pl --file FILENAME
+You can also save to a file directly:
 
-=head2 Options
+ excel2csv --file file.xlsx --output file.csv
 
-=over 1
+Or even write to STDERR:
 
-=item --file FILENAME
+ excel2csv --file file.xlsx --output STDERR
 
-the file to "hexinate"
+By default, the CSV file will be in the UTF-8 encoding. You can change the encoding:
 
-=item --match REGEX
+ excel2csv --file file.xlsx --output_encoding CP1252 --output file_cp1252.csv
 
-A regex. Will only show lines matching this.
+It can also autmatically trim whitespace from around all cell values:
 
-=item --width 20
+ excel2csv --file file.xlsx --trim
 
-The column width to print out.
+Use the --sheet option to read from a sheet/tab other than the first one. The following will pull from sheet 2:
 
-=item --errors
+ excel2csv --file file.xlsx --sheet 2
 
-If enabled, will only print lines with unicode errors.
+You do not have to pass the --file and --output option keys. The first non-keyed option will be used as the filename, and the second non-keyed option will be the output. Other keyed options can still be passed in:
 
-=item --check_line LINE_NUMBER
+ excel2csv file.xlsx file.csv --trim
+ 
+Bash file globbing is also supported.
+This will parse through each xls file in the current directory
+and print out the CSV output from each one to STDOUT.
 
-Only check the given line number.
+ excel2csv *.xls
+ 
+gz files can also be parsed:
+
+ excel2csv file.xls.gz
+ excel2csv *.xls.gz
+
+You can even pipe in the binary excel data:
+
+ cat file.xls | excel2csv > file.csv
+
+=HEAD1 ARGS
+
+=over
+
+=item --file=(string)
+
+The path to the spreadsheet file.
+
+=item --output=(string)
+
+The path to where you want to store the CSV file.
+
+If you do not pass this, the CSV output will go to STDOUT.
+
+If this is a directory, a csv filename will be created automatically
+using the excel filename.
+The extension will simply be changed to .csv.
+
+=item --formatted
+
+Be default, the raw cell values from xls files will be returned.
+If this is set, the "formatted" cell values will be returned instead.
+
+This is really only useful to get formatted numbers,
+such as currency values that include a currency symbol,
+or large numbers that contain commas.
+
+=item --trim
+
+If set, whitespace around each value will be trimmed.
+
+=item --output_encoding=(string)
+
+The character encoding that you want the CSV output to be in.
+Defaults to UTF-8.
+
+=item --max_blank=(integer)
+
+If this many blank lines are found, parsing will stop.
+Defaults to 10.
+
+=item --sheet=(integer)
+
+The sheet (tab) in the spreadsheet to parse.
+Defaults to sheet 1.
+
+You can pass this option multiple times to parse multiple sheets.
+Each sheet's data will be added sequentially to the same CSV output.
+
+=item --match=(regex)
+
+If set, only rows that have a value matching this regex will be returned.
+
+=item --color
+
+Use color when outputting results.
+This option only makes sense when you are outputting to STDOUT.
+
+When using --match, each match will also be highlighted in red.
 
 =back
 
 =cut
 
-my $printed_row = 0;
-my $line_number = 0;
+use Getopt::Long qw(:config permute);
+use Text::Iconv;
+use Spreadsheet::ParseExcel;
+use Spreadsheet::XLSX;
+use Text::CSV_XS;
+use IO::Uncompress::Gunzip qw(gunzip $GunzipError);
+use File::Temp qw(tempfile);
+use Term::ANSIColor;
 
-open my $fh, $file or die "Could not open $file: $!";
-binmode $fh;
-while ( my $line = <$fh> )
+my @FILES;
+my $OUTPUT = 'STDOUT';
+my $USE_FORMATTED_VALUES;
+my $OUTPUT_ENCODING = 'UTF-8';
+my $TRIM;
+my $MAX_BLANK = 10;
+my @SHEETS;
+my $MATCH;
+my $VERBOSE;
+my $USE_COLOR;
+
+GetOptions(
+    "file=s" => \@FILES,
+    "output=s" => \$OUTPUT,
+    "formatted" => \$USE_FORMATTED_VALUES,
+    "output_encoding=s" => \$OUTPUT_ENCODING,
+    "trim" => \$TRIM,
+    "max_blank=i" => \$MAX_BLANK,
+    "sheet=i" => \@SHEETS,
+    "match=s" => \$MATCH,
+    "verbose" => \$VERBOSE,
+    "color" => \$USE_COLOR,
+);
+
+my ($stdin_fh, $stdin_filename);
+
+if (( !scalar(@FILES) ) && ( @ARGV ))
 {
-    $line_number++;
-    
-    next if ($check_line && $line_number != $check_line);
-    
-    my $is_error = 0;
-    
-    if ($errors_only)
+    foreach my $file (@ARGV)
     {
-        if (!is_valid($line))
+        if ($file =~ /\.xls/i)
         {
-            print color('magenta') . "$line_number INVALID UTF-8:\n" . color('reset');
+            push(@FILES, $file);
+        }
+        elsif ( $file =~ /\.csv$/i )
+        {
+            $OUTPUT = $file;
         }
     }
-    
-    if (( !$match ) || ( $line =~ /$match/ ))
-    {   
-        my @bytes = split(//, $line);
-        #my @hex = ( unpack("H*", $line) =~ m/../g );
-        my $hexes = "";
-        my $text = "";
-        my $length = 0;
-        
-        my $total_bytes = 0;
-        my $found_bytes = 0;
-        
-        my $hex_char = "";
-        my $utf8_char = "";
-        my $have_full_char = 0;
-        
-        my $bytesize = @bytes;
-        #print "bytes: $bytesize\n";
-        
-        while (@bytes)
+}
+else
+{
+    my $i = 0;
+    while (<STDIN>)
+    {
+        if (++$i==1)
         {
-            my $byte = shift @bytes;
-            
-            my $ord = ord($byte);
-            my $binary = sprintf("%b ", $ord);
-            
-            # http://en.wikipedia.org/wiki/UTF-8
-            #
-            # One-byte codes are used only for the ASCII values 0 through 127.
-            # In this case the UTF-8 code has the same value as the ASCII code.
-            # The high-order bit of these codes is always 0.
-            if ($ord <= 127)
+            if ($_ =~ /^\x50\x4B/)
             {
-                $total_bytes = 1;
-                $found_bytes = 1;
-                
-                $hex_char = get_hex($ord);
-                if ($ord <= 31)
-                {
-                    # non-printable character
-                    $utf8_char = "";
-                }
-                else
-                {
-                    $utf8_char = $byte;
-                }
-                
-                $have_full_char = 1;
+                verbose("xlsx input detected", "cyan");
+                ($stdin_fh, $stdin_filename) = tempfile('excel2csv_XXXXXX', SUFFIX => '.xlsx', UNLINK => 1, TMPDIR => 1);
             }
-            # The leading byte has two or more high-order 1s followed by a 0
-            elsif ( $binary =~ /^(11+)0/ )
+            elsif ($_ =~ /^\xD0\xCF/)
             {
-                # The number of high-order 1s in the leading byte of a multi-byte sequence indicates the number of bytes in the sequence,
-                # so that the length of the sequence can be determined without examining the continuation bytes.
-                $total_bytes = length($1);
-                $found_bytes = 1;
-                
-                $hex_char = color('magenta') . get_hex($ord) . color('reset');
-                $utf8_char = $byte;
-                $have_full_char = 0;
-            }
-            # while continuation bytes all have '10' in the high-order position
-            elsif ( $binary =~ /^10/ )
-            {
-                $found_bytes++;
-                $utf8_char .= $byte;
-                
-                if ($found_bytes == $total_bytes)
-                {
-                    $have_full_char = 1;
-                    
-                    if (is_valid($utf8_char))
-                    {
-                        $hex_char .= color('blue') . get_hex($ord) . color('reset');
-                    }
-                    else
-                    {
-                        $hex_char .= color('yellow') . get_hex($ord) . color('reset');
-                    }
-                }
-                elsif ($found_bytes < $total_bytes)
-                {
-                    $hex_char .= color('blue') . get_hex($ord) . color('reset');
-                }
-                else
-                {
-                    $hex_char .= color('red') . get_hex($ord) . color('reset');
-                }
+                verbose("xls input detected", "cyan");
+                ($stdin_fh, $stdin_filename) = tempfile('excel2csv_XXXXXX', SUFFIX => '.xls', UNLINK => 1, TMPDIR => 1);
             }
             else
             {
-                $is_error = 1;
-                
-                $total_bytes = 1;
-                $found_bytes = 1;
-                
-                $hex_char = color('red') . get_hex($ord) . color('reset');
-                $utf8_char = '?';
-                $have_full_char = 1;
-            }
-            
-            if ( $have_full_char )
-            {
-                # don't print out anything until we have the requested number of bytes
-                if ( $length + $total_bytes <= $column_width )
-                {
-                    $hexes .= $hex_char;
-                    
-                    $text .= $utf8_char;
-                    $length += $total_bytes;
-                }
-                # the current byte will take the row over the requested number of bytes
-                # print out what we have and start a new row
-                else
-                {
-                    # don't print if the line is valid and we are only looking for invalid characters
-                    unless (( $errors_only ) && ( !$is_error ))
-                    {
-                        print $hexes;
-                        
-                        my $leftover = $column_width - $length;
-
-                        print "   "x$leftover;
-                        print "    |$text| :$line_number\n";
-                        print "\n" if ++$printed_row % 3 == 0;
-                    }
-                    
-                    $is_error = 0;
-                    $hexes = $hex_char;
-                    $text = "$utf8_char";
-                    $length = $total_bytes;
-                }
+                die "unknown input from STDIN";
             }
         }
-        if ($length)
-        {
-            unless (( $errors_only ) && ( !$is_error ))
-            {
-                print $hexes;
-                
-                my $leftover = $column_width - $length;
-
-                print "   "x$leftover;
-                print "    |$text| :$line_number\n";
-                print "\n" if ++$printed_row % 3 == 0;
-            }
-            
-            $is_error = 0;
-            $hexes = "";
-            $text = "";
-            $length = 0;
-        }
+        print $stdin_fh $_;
+    }
+    if ($stdin_fh && $stdin_filename)
+    {
+        close $stdin_fh;
+        push(@FILES, $stdin_filename);
     }
 }
-close $fh;
 
-sub get_hex
+die '--file is required' unless @FILES;
+
+if ($OUTPUT !~ /^(?:STDOUT|STDERR|.+\.csv)$/i)
 {
-    return sprintf("%2lX ", $_[0]);
+    die "invalid output: $OUTPUT";
 }
 
-sub is_valid
+@SHEETS = (1) unless @SHEETS;
+
+if ($MATCH)
 {
-    my ($data) = @_;
-    my $is_valid = $data =~ m/\A(?:
-         [\x09\x0A\x0D\x20-\x7E]            # ASCII
-       | [\xC2-\xDF][\x80-\xBF]             # non-overlong 2-byte
-       |  \xE0[\xA0-\xBF][\x80-\xBF]        # excluding overlongs
-       | [\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}  # straight 3-byte
-       |  \xED[\x80-\x9F][\x80-\xBF]        # excluding surrogates
-       |  \xF0[\x90-\xBF][\x80-\xBF]{2}     # planes 1-3
-       | [\xF1-\xF3][\x80-\xBF]{3}          # planes 4-15
-       |  \xF4[\x80-\x8F][\x80-\xBF]{2}     # plane 16
-       )*\z/x;
-    return $is_valid;
+    $MATCH = qr/$MATCH/;
+}
+
+my $UTF16LE_CONVERTER = Text::Iconv->new( 'UTF-16LE', $OUTPUT_ENCODING );
+my $UTF16BE_CONVERTER = Text::Iconv->new( 'UTF-16BE', $OUTPUT_ENCODING );
+my $CP1252 = Text::Iconv->new( 'CP1252', $OUTPUT_ENCODING );
+
+my $append = 0;
+foreach my $file (@FILES)
+{
+    parse_file( file => $file, append => $append );
+    $append = 1;
+}
+
+sub parse_file
+{
+    my ( %args ) = @_;
+    
+    my $file = $args{file};
+    my $append = $args{append};
+    
+    my $data;
+    
+    my ($gz_fh, $gz_filename);
+    if ($file =~ /^.+(\.xlsx?)\.gz$/i)
+    {
+        verbose("unzipping $file...", "cyan");
+        ($gz_fh, $gz_filename) = tempfile('excel2csv_XXXXXX', SUFFIX => $1, UNLINK => 1, TMPDIR => 1);
+        gunzip($file, $gz_filename);
+        $file = $gz_filename;
+    }
+    
+    eval
+    {
+        if ( $file =~ /\.xlsx$/i )
+        {
+            $data = parse_xlsx( file => $file );
+        }
+        elsif ( $file =~ /\.xls$/i )
+        {
+            $data = parse_excel( file => $file );
+        }
+        else
+        {
+            die "Unsupported file type: $file";
+        }
+    };
+    if (my $error = $@)
+    {
+        die "$error\n" if $error;
+    }
+    
+    if ($data && @$data)
+    {
+        my $fh;
+        if (uc($OUTPUT) eq 'STDOUT')
+        {
+            $fh = *STDOUT;
+        }
+        elsif (uc($OUTPUT) eq 'STDERR')
+        {
+            $fh = *STDERR;
+        }
+        else
+        {
+            my $output_location = $OUTPUT;
+            
+            if (-d $output_location)
+            {
+                $output_location .= '/' unless $output_location =~ m{/$};
+                $output_location .= $file;
+                $output_location =~ s{\.xlsx?$}{.csv}i;
+            }
+            
+            if ($append && -f _)
+            {
+                open($fh, ">>", $output_location) or die "Can't create $output_location for appending: $!";
+            }
+            else
+            {
+                open($fh, ">", $output_location) or die "Can't create $output_location for writing: $!";
+            }
+            binmode $fh;
+        }
+        
+        my $csv = Text::CSV_XS->new({
+            eol => "\n",
+            sep_char => ',',
+            quote_char => '"',
+            escape_char => '"',
+            binary => 1,
+            always_quote => 1,
+        });
+        $csv->print($fh, $_) for @$data;
+        
+        # don't close it...we don't want to close STDOUT/STDERR, and its not needed for files
+        #close $fh;
+    }
+    
+    return;
+}
+
+sub parse_xlsx
+{
+    my ( %args ) = @_;
+    
+    my $file = $args{file};
+    verbose("parsing $file...", "green");
+    
+    my $converter;
+    if ( $OUTPUT_ENCODING ne 'UTF-8' )
+    {
+        $converter = Text::Iconv->new( 'UTF-8', $OUTPUT_ENCODING );
+    }
+
+    my $document = Spreadsheet::XLSX->new( $file, $converter );
+
+    my @data;
+    
+    foreach my $sheet_number (@SHEETS)
+    {
+        $sheet_number ||= 1;
+        $sheet_number--;
+        
+        my $sheet = @{ $document->{Worksheet} }[$sheet_number];
+
+        my $blank_rows = 0;
+
+        $sheet->{MaxRow} ||= $sheet->{MinRow};
+        XROWS: foreach my $row ( $sheet->{MinRow} .. $sheet->{MaxRow} )
+        {
+            $sheet->{MaxCol} ||= $sheet->{MinCol};
+            
+            my @rowdata;
+            my $has_data = 0;
+            my $matched = 0;
+
+            foreach my $col ( $sheet->{MinCol} .. $sheet->{MaxCol} )
+            {
+                my $cell = $sheet->{Cells}[$row][$col];
+                
+                my $value;
+                if (( $USE_FORMATTED_VALUES ) && ( defined($cell) ))
+                {
+                    # only grab formatted values for numbers and dates
+                    if ($cell->type() =~ /^(?:Numeric|Date)$/)
+                    {
+                        $value = $cell->value();
+
+                        # if we got back "General", the formatted value cannot be retrieved
+                        if ($value eq 'General')
+                        {
+                            $value = $cell->{Val};
+                        }
+                    }
+                    else
+                    {
+                        $value = $cell->{Val};
+                    }
+                }
+                else
+                {
+                    $value = $cell->{Val};
+                }
+
+                if ($TRIM)
+                {
+                    $value =~ s/\A\s*//;
+                    $value =~ s/\s*\Z//;
+                }
+                
+                if ($value)
+                {
+                    # decode entities
+                    # compensates for this bug: https://rt.cpan.org/Public/Bug/Display.html?id=73753
+                    $value =~ s/&amp;/&/g;
+                    $value =~ s/&gt;/>/g;
+                    $value =~ s/&lt;/</g;
+                }
+                
+                $has_data = 1 if (( defined $value ) && ( $value ne "" ));
+                
+                if ($MATCH)
+                {
+                    if ($USE_COLOR)
+                    {
+                        my $color_on = color("red");
+                        my $color_off = color("reset");
+                        my $matches = $value =~ s{($MATCH)}{$color_on$1$color_off}g;
+                        $matched = 1 if $matches;
+                    }
+                    else
+                    {
+                        $matched = 1 if $value =~ $MATCH;
+                    }
+                }
+
+                push(@rowdata, $value);
+            }
+            
+            if ($has_data)
+            {
+                $blank_rows = 0;
+            }
+            else
+            {
+                $blank_rows++;
+                if (( $MAX_BLANK ) && ( $blank_rows > $MAX_BLANK ))
+                {
+                    last XROWS;
+                }
+            }
+
+            next XROWS if ( !$has_data );
+            next XROWS if ( $MATCH && !$matched );
+            
+            push( @data, \@rowdata );
+        }
+    }
+    
+    return \@data;
+}
+
+sub parse_excel
+{
+    my ( %args ) = @_;
+    
+    my $file = $args{file};
+    verbose("parsing $file...", "green");
+
+    my $excel = new Spreadsheet::ParseExcel;
+    my $book  = $excel->Parse( $file );
+    if ( !defined $book )
+    {
+        die $excel->error(), ".\n";
+    }
+    
+    my @data;
+    
+    foreach my $sheet_number (@SHEETS)
+    {
+        $sheet_number ||= 1;
+        $sheet_number--;
+        
+        my $sheet = $book->{Worksheet}[$sheet_number];
+        
+        my $blank_rows = 0;
+
+        EROWS: for ( my $row = 0 ; $row < ( $sheet->{MaxRow} + 1 ) ; $row++ )
+        {
+            my @rowdata;
+            my $has_data = 0;
+            my $matched = 0;
+
+            for ( my $cell_count = 0 ; $cell_count < ( $sheet->{MaxCol} + 1 ) ; $cell_count++ )
+            {
+                my $cell = $sheet->{Cells}[$row][$cell_count];
+                my $value = _xls_get_cell_value($cell);
+                $has_data = 1 if (( defined $value ) && ( $value ne "" ));
+                
+                if ($MATCH)
+                {
+                    if ($USE_COLOR)
+                    {
+                        my $color_on = color("red");
+                        my $color_off = color("reset");
+                        my $matches = $value =~ s{($MATCH)}{$color_on$1$color_off}g;
+                        $matched = 1 if $matches;
+                    }
+                    else
+                    {
+                        $matched = 1 if $value =~ $MATCH;
+                    }
+                }
+                
+                push(@rowdata, $value);
+            }
+
+            if ($has_data)
+            {
+                $blank_rows = 0;
+            }
+            else
+            {
+                $blank_rows++;
+                if (( $MAX_BLANK ) && ( $blank_rows > $MAX_BLANK ))
+                {
+                    last EROWS;
+                }
+            }
+            
+            next EROWS if ( !$has_data );
+            next EROWS if ( $MATCH && !$matched );
+
+            push( @data, \@rowdata );
+        }
+    }
+    
+    return \@data;
+}
+
+sub _xls_get_cell_value
+{
+    my ( $cell ) = @_;
+    
+    return unless $cell;
+    
+    my $value;
+    
+    if ($USE_FORMATTED_VALUES)
+    {
+        # only grab formatted values for numbers and dates
+        if ($cell->type() =~ /^(?:Numeric|Date)$/)
+        {
+            $value = $cell->value();
+            
+            # if we got back "GENERAL", the formatted value cannot be retrieved
+            if ($value eq 'GENERAL')
+            {
+                $value = $cell->{Val};
+            }
+        }
+        else
+        {
+            $value = $cell->{Val};
+        }
+    }
+    else
+    {
+        $value = $cell->{Val};
+    }
+
+    # From the docs:
+    #
+    # 0: Unknown format. This shouldn't happen. In the default case the format should be 1.
+    # 1: 8bit ASCII or single byte UTF-16. This indicates that the characters are encoded in a single byte. In Excel 95 and earlier This usually meant ASCII or an international variant. In Excel 97 it refers to a compressed UTF-16 character string where all of the high order bytes are 0 and are omitted to save space.
+    # 2: UTF-16BE.
+    # 3: Native encoding. In Excel 95 and earlier this encoding was used to represent multi-byte character encodings such as SJIS.
+    #
+    # That said...I do not think that #1 is correct. I'm definately seeing Windows-1252 data in cells that return an encoding of "1"
+    #
+    my $cell_encoding = $cell->encoding();
+
+    if ($cell_encoding == 0)
+    {
+        #warn "unknown encoding: $value";
+    }
+    elsif ($cell_encoding == 1)
+    {
+        if ($value =~ /\0/) # TODO this might be wrong if the utf16 is really "compressed"
+        {
+            $value = $UTF16LE_CONVERTER->convert($value);
+            #warn "\tUTF-16LE!: $value";
+        }
+        else
+        {
+            $value = $CP1252->convert($value);
+            #warn "\tWindows-1252!: $value";
+        }
+    }
+    elsif ($cell_encoding == 2)
+    {
+        $value = $UTF16BE_CONVERTER->convert($value);
+        #warn "\tUTF-16BE!: $value";
+    }
+    
+    if ($TRIM)
+    {
+        $value =~ s/\A\s*//;
+        $value =~ s/\s*\Z//;
+    }
+    
+    return $value;
+}
+
+sub verbose
+{
+    my ($message, $color) = @_;
+    if ($VERBOSE && uc($OUTPUT) ne 'STDERR')
+    {
+        print STDERR color $color if $USE_COLOR && $color;
+        warn "$message\n";
+        print STDERR color 'reset' if $USE_COLOR && $color;
+    }
+    return;
 }
