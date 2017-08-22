@@ -1,11 +1,11 @@
 #!/usr/bin/env perl
 use strict;
 
-=HEAD1 NAME
+=head1 NAME
 
 excel2csv
 
-=HEAD1 SYNOPSIS
+=head1 SYNOPSIS
 
 By default, the CSV output goes to STDOUT:
 
@@ -50,7 +50,7 @@ You can even pipe in the binary excel data:
 
  cat file.xls | excel2csv > file.csv
 
-=HEAD1 ARGS
+=head1 ARGS
 
 =over
 
