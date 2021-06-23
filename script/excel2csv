@@ -163,7 +163,7 @@ if (( !scalar(@FILES) ) && ( @ARGV ))
         }
     }
 }
-else
+elsif ( !scalar(@FILES) )
 {
     my $i = 0;
     while (<STDIN>)
